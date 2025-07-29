@@ -19,8 +19,9 @@ A Next.js application featuring two chat modes: **Multi-Expert Chat** (custom Op
 
 2. **Environment setup**
    ```bash
-   # Create .env.local file
-   echo "OPENAI_API_KEY=your_openai_api_key_here" > .env.local
+   # Copy example file and add your OpenAI API key
+   cp .env.example .env.local
+   # Edit .env.local and replace with your actual OpenAI API key
    ```
 
 3. **Start development**
