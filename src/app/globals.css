@@ -24,3 +24,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* CopilotKit Chat Positioning */
+[data-copilotkit-chat] {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+[data-copilotkit-messages] {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  padding: 1.5rem !important;
+}
+
+[data-copilotkit-input] {
+  position: sticky !important;
+  bottom: 0 !important;
+  background: white !important;
+  border-top: 1px solid #e5e7eb !important;
+  padding: 1rem 1.5rem !important;
+  margin: 0 !important;
+}
