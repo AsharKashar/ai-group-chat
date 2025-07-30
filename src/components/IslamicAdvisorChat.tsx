@@ -19,7 +19,7 @@ const SENSITIVE_WORDS = [
 ];
 
 // Help popup component
-function HelpPopup({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+function HelpPopup({ isOpen, onClose, onContinue }: { isOpen: boolean; onClose: () => void; onContinue?: () => void }) {
   if (!isOpen) return null;
 
   return (
@@ -66,18 +66,26 @@ function HelpPopup({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }
           </div>
         </div>
         
-        <div className="flex space-x-3">
+        <div className="flex space-x-2">
           <button
             onClick={() => window.open('mailto:support@islamicadvisor.com?subject=Need Support', '_blank')}
-            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors text-xs"
           >
             📧 Contact Support
           </button>
+          {onContinue && (
+            <button
+              onClick={onContinue}
+              className="flex-1 bg-orange-600 text-white px-3 py-2 rounded-lg hover:bg-orange-700 transition-colors text-xs"
+            >
+              Send Message Anyway
+            </button>
+          )}
           <button
             onClick={onClose}
-            className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
+            className="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors text-xs"
           >
-            Continue Chat
+            Cancel & Edit
           </button>
         </div>
       </div>
@@ -89,6 +97,8 @@ export function IslamicAdvisorChat() {
   const [showHelpPopup, setShowHelpPopup] = useState(false);
   const [lastMessage, setLastMessage] = useState('');
   const [conversationHistory, setConversationHistory] = useState<string>('');
+  const [blockedMessage, setBlockedMessage] = useState<string>('');
+  const [blockedInput, setBlockedInput] = useState<HTMLElement | null>(null);
 
   // Make Islamic knowledge context readable
   useCopilotReadable({
@@ -128,17 +138,16 @@ export function IslamicAdvisorChat() {
     );
   }, []);
 
-  // Monitor chat input for sensitive words - multiple selectors for better detection
+  // Monitor for message submission (Enter key press) to check for sensitive words
   useEffect(() => {
-    const checkInputs = () => {
+    const checkForSubmissionListeners = () => {
       // Try multiple selectors for CopilotKit input
       const selectors = [
         '[data-copilotkit-input] textarea',
         'textarea[placeholder*="message"]',
         'textarea[placeholder*="Type"]',
         '.copilot-chat textarea',
-        'div[contenteditable="true"]',
-        'input[type="text"]'
+        'div[contenteditable="true"]'
       ];
       
       let found = false;
@@ -146,28 +155,65 @@ export function IslamicAdvisorChat() {
       for (const selector of selectors) {
         const inputs = document.querySelectorAll(selector);
         inputs.forEach((input) => {
-          if (!input.hasAttribute('data-sensitive-listener')) {
-            input.setAttribute('data-sensitive-listener', 'true');
+          if (!input.hasAttribute('data-submission-listener')) {
+            input.setAttribute('data-submission-listener', 'true');
             
-            const handleInput = (e: Event) => {
-              const target = e.target as HTMLTextAreaElement | HTMLInputElement;
-              const message = target.value || target.textContent || '';
-              
-              if (message !== lastMessage && message.length > 3) {
-                setLastMessage(message);
-                console.log('Checking message:', message); // Debug log
+            const handleKeyDown = (e: Event) => {
+              const keyEvent = e as KeyboardEvent;
+              // Check if Enter is pressed (and not Shift+Enter for new line)
+              if (keyEvent.key === 'Enter' && !keyEvent.shiftKey) {
+                const target = e.target as HTMLTextAreaElement | HTMLInputElement;
+                const message = target.value || target.textContent || '';
                 
-                if (checkForSensitiveWords(message)) {
-                  console.log('Sensitive word detected!'); // Debug log
+                console.log('Message being sent:', message); // Debug log
+                
+                if (message.trim().length > 0 && checkForSensitiveWords(message)) {
+                  console.log('Sensitive word detected in submitted message!'); // Debug log
+                  // Prevent the message from being sent immediately
+                  e.preventDefault();
+                  e.stopPropagation();
+                  
+                  // Store the message and input for potential later sending
+                  setBlockedMessage(message);
+                  setBlockedInput(target);
+                  
+                  // Show the popup
                   setShowHelpPopup(true);
                 }
               }
             };
 
-            // Add multiple event listeners for better coverage
-            input.addEventListener('input', handleInput);
-            input.addEventListener('keyup', handleInput);
-            input.addEventListener('paste', handleInput);
+            // Also check for form submissions and button clicks
+            const handleSubmit = (e: Event) => {
+              const target = input as HTMLTextAreaElement | HTMLInputElement;
+              const message = target.value || target.textContent || '';
+              
+              if (message.trim().length > 0 && checkForSensitiveWords(message)) {
+                console.log('Sensitive word detected in form submission!'); // Debug log
+                e.preventDefault();
+                e.stopPropagation();
+                setShowHelpPopup(true);
+                setLastMessage(message);
+              }
+            };
+
+            input.addEventListener('keydown', handleKeyDown);
+            
+            // Also listen for nearby submit buttons
+            const parentForm = input.closest('form');
+            if (parentForm) {
+              parentForm.addEventListener('submit', handleSubmit);
+            }
+            
+            // Look for submit buttons near the input
+            const submitButtons = document.querySelectorAll('button[type="submit"], button[aria-label*="send"], button[aria-label*="Send"]');
+            submitButtons.forEach(button => {
+              if (!button.hasAttribute('data-submit-listener')) {
+                button.setAttribute('data-submit-listener', 'true');
+                button.addEventListener('click', handleSubmit);
+              }
+            });
+            
             found = true;
           }
         });
@@ -175,24 +221,64 @@ export function IslamicAdvisorChat() {
       
       // If no input found, try again after a short delay
       if (!found) {
-        setTimeout(checkInputs, 1000);
+        setTimeout(checkForSubmissionListeners, 1000);
       }
     };
 
-    checkInputs();
+    checkForSubmissionListeners();
     
     // Also check periodically in case inputs are dynamically created
-    const interval = setInterval(checkInputs, 2000);
+    const interval = setInterval(checkForSubmissionListeners, 3000);
     
     return () => {
       clearInterval(interval);
       // Clean up listeners
-      const allInputs = document.querySelectorAll('[data-sensitive-listener]');
+      const allInputs = document.querySelectorAll('[data-submission-listener]');
       allInputs.forEach(input => {
-        input.removeAttribute('data-sensitive-listener');
+        input.removeAttribute('data-submission-listener');
+      });
+      const allButtons = document.querySelectorAll('[data-submit-listener]');
+      allButtons.forEach(button => {
+        button.removeAttribute('data-submit-listener');
       });
     };
-  }, [lastMessage, checkForSensitiveWords]);
+  }, [checkForSensitiveWords]);
+
+  // Function to send the blocked message anyway
+  const sendBlockedMessage = useCallback(() => {
+    if (blockedInput && blockedMessage) {
+      // Clear the popup first
+      setShowHelpPopup(false);
+      
+      // Simulate the original message sending by triggering the submission
+      // We'll clear the current input and set it to the blocked message
+      const input = blockedInput;
+      
+      // Set the input value to the blocked message
+      if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
+        input.value = blockedMessage;
+      } else if (input instanceof HTMLElement) {
+        input.textContent = blockedMessage;
+      }
+      
+      // Trigger the submission event
+      setTimeout(() => {
+        const enterEvent = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true
+        });
+        input.dispatchEvent(enterEvent);
+      }, 100);
+      
+      // Clear the blocked state
+      setBlockedMessage('');
+      setBlockedInput(null);
+    }
+  }, [blockedInput, blockedMessage]);
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -331,7 +417,12 @@ Remember that you are here to provide spiritual comfort, guidance, and authentic
       {/* Help Popup */}
       <HelpPopup 
         isOpen={showHelpPopup} 
-        onClose={() => setShowHelpPopup(false)} 
+        onClose={() => {
+          setShowHelpPopup(false);
+          setBlockedMessage('');
+          setBlockedInput(null);
+        }}
+        onContinue={blockedMessage ? sendBlockedMessage : undefined}
       />
     </div>
   );
